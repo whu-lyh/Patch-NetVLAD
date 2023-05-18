@@ -1,0 +1,3 @@
+[submodule "submodules/mapillary_sls"]
+	path = submodules/mapillary_sls
+	url = git@github.com:whu-lyh/mapillary_sls.git

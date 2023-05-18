@@ -49,7 +49,7 @@ import torch.optim as optim
 
 import h5py
 
-from tensorboardX import SummaryWriter
+from torch.utils.tensorboard import SummaryWriter
 import numpy as np
 
 from patchnetvlad.training_tools.train_epoch import train_epoch
@@ -63,6 +63,7 @@ from patchnetvlad.tools import PATCHNETVLAD_ROOT_DIR
 from tqdm.auto import trange
 
 from patchnetvlad.training_tools.msls import MSLS
+from patchnetvlad.training_tools.kitti360panorama import KITTI360PANORAMA
 
 
 if __name__ == "__main__":
@@ -151,7 +152,7 @@ if __name__ == "__main__":
             print('===> Finding cluster centroids')
 
             print('===> Loading dataset(s) for clustering')
-            train_dataset = MSLS(opt.dataset_root_dir, mode='test', cities='train', transform=input_transform(),
+            train_dataset = KITTI360PANORAMA(opt.dataset_root_dir, mode='test', cities='train', transform=input_transform(),
                                  bs=int(config['train']['cachebatchsize']), threads=opt.threads,
                                  margin=float(config['train']['margin']))
 
@@ -198,11 +199,11 @@ if __name__ == "__main__":
 
     print('===> Loading dataset(s)')
     exlude_panos_training = not config['train'].getboolean('includepanos')
-    train_dataset = MSLS(opt.dataset_root_dir, mode='train', nNeg=int(config['train']['nNeg']), transform=input_transform(),
+    train_dataset = KITTI360PANORAMA(opt.dataset_root_dir, mode='train', nNeg=int(config['train']['nNeg']), transform=input_transform(),
                          bs=int(config['train']['cachebatchsize']), threads=opt.threads, margin=float(config['train']['margin']),
                          exclude_panos=exlude_panos_training)
 
-    validation_dataset = MSLS(opt.dataset_root_dir, mode='val', transform=input_transform(),
+    validation_dataset = KITTI360PANORAMA(opt.dataset_root_dir, mode='val', transform=input_transform(),
                               bs=int(config['train']['cachebatchsize']), threads=opt.threads,
                               margin=float(config['train']['margin']), posDistThr=25)
 
