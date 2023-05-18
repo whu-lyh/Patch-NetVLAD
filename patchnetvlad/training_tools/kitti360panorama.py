@@ -47,7 +47,7 @@ from tqdm import tqdm
 default_cities = {
     'train': ["0"],
     'val': ["3"],
-    'test': []
+    'test': ["3"]
 }
 
 
@@ -60,16 +60,15 @@ class ImagesFromList(Dataset):
         return len(self.images)
 
     def __getitem__(self, idx):
-        img = [Image.open(self.images[idx])]
-        img = [self.transform(img)]
+        img = Image.open(self.images[idx])
+        img = self.transform(img)
 
         return img, idx
 
 
 class KITTI360PANORAMA(Dataset):
     def __init__(self, root_dir, cities='', nNeg=5, transform=None, mode='train', task='im2im', subtask='all',
-                 seq_length=1, posDistThr=10, negDistThr=25, cached_queries=1000, cached_negatives=1000,
-                 positive_sampling=True, bs=24, threads=8, margin=0.1):
+                 seq_length=1, posDistThr=10, negDistThr=25, cached_queries=1000, cached_negatives=1000, bs=24, threads=8, margin=0.1):
 
         # initializing
         assert mode in ('train', 'val', 'test')
@@ -237,10 +236,10 @@ class KITTI360PANORAMA(Dataset):
             sys.exit()
 
         # cast to np.arrays for indexing during training
-        self.qIdx = np.asarray(self.qIdx)
+        self.qIdx = np.asarray(self.qIdx,dtype=object)
         self.qImages = np.asarray(self.qImages)
-        self.pIdx = np.asarray(self.pIdx)
-        self.nonNegIdx = np.asarray(self.nonNegIdx)
+        self.pIdx = np.asarray(self.pIdx,dtype=object)
+        self.nonNegIdx = np.asarray(self.nonNegIdx,dtype=object)
         self.dbImages = np.asarray(self.dbImages)
 
         # decide device type ( important for triplet mining )

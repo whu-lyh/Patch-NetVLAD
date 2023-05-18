@@ -87,7 +87,7 @@ if __name__ == "__main__":
     parser.add_argument('--start_epoch', default=0, type=int, metavar='N',
                         help='manual epoch number (useful on restarts)')
     parser.add_argument('--save_every_epoch', action='store_true', help='Flag to set a separate checkpoint file for each new epoch')
-    parser.add_argument('--threads', type=int, default=6, help='Number of threads for each data loader to use')
+    parser.add_argument('--threads', type=int, default=0, help='Number of threads for each data loader to use')
     parser.add_argument('--nocuda', action='store_true', help='If true, use CPU only. Else use GPU.')
 
 
@@ -152,7 +152,7 @@ if __name__ == "__main__":
             print('===> Finding cluster centroids')
 
             print('===> Loading dataset(s) for clustering')
-            train_dataset = KITTI360PANORAMA(opt.dataset_root_dir, mode='test', cities='train', transform=input_transform(),
+            train_dataset = KITTI360PANORAMA(opt.dataset_root_dir, mode='val', cities='train', transform=input_transform(),
                                  bs=int(config['train']['cachebatchsize']), threads=opt.threads,
                                  margin=float(config['train']['margin']))
 
@@ -200,8 +200,7 @@ if __name__ == "__main__":
     print('===> Loading dataset(s)')
     exlude_panos_training = not config['train'].getboolean('includepanos')
     train_dataset = KITTI360PANORAMA(opt.dataset_root_dir, mode='train', nNeg=int(config['train']['nNeg']), transform=input_transform(),
-                         bs=int(config['train']['cachebatchsize']), threads=opt.threads, margin=float(config['train']['margin']),
-                         exclude_panos=exlude_panos_training)
+                         bs=int(config['train']['cachebatchsize']), threads=opt.threads, margin=float(config['train']['margin']))
 
     validation_dataset = KITTI360PANORAMA(opt.dataset_root_dir, mode='val', transform=input_transform(),
                               bs=int(config['train']['cachebatchsize']), threads=opt.threads,
