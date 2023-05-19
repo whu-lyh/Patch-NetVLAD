@@ -7,6 +7,7 @@ outfilename = sys.argv[2]
 
 query_ref_map = {}
 
+# load the prediction results which is the kapture format
 with open(infilename, 'r') as infile:
     for idx, l in enumerate(infile):
         if l.startswith('#'):
@@ -20,6 +21,7 @@ with open(infilename, 'r') as infile:
             query_ref_map[query_img_name] = []
         query_ref_map[query_img_name].append(ref_img_name)
 
+# convert to prediction results which is msls format
 with open(outfilename, 'w') as outfile:
     for query_img_name in query_ref_map:
         outfile.write(query_img_name)

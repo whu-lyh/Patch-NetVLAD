@@ -34,6 +34,7 @@ from tqdm.auto import trange, tqdm
 from torch.utils.data import DataLoader
 from patchnetvlad.training_tools.tools import humanbytes
 from patchnetvlad.training_tools.msls import MSLS
+from patchnetvlad.training_tools.kitti360panorama import KITTI360PANORAMA
 
 
 def train_epoch(train_dataset, model, optimizer, criterion, encoder_dim, device, epoch_num, opt, config, writer):
@@ -58,7 +59,7 @@ def train_epoch(train_dataset, model, optimizer, criterion, encoder_dim, device,
 
         training_data_loader = DataLoader(dataset=train_dataset, num_workers=opt.threads,
                                           batch_size=int(config['train']['batchsize']), shuffle=True,
-                                          collate_fn=MSLS.collate_fn, pin_memory=cuda)
+                                          collate_fn=KITTI360PANORAMA.collate_fn, pin_memory=cuda)
 
         tqdm.write('Allocated: ' + humanbytes(torch.cuda.memory_allocated()))
         tqdm.write('Cached:    ' + humanbytes(torch.cuda.memory_cached()))

@@ -31,6 +31,7 @@ Modified by Stephen Hausler, Sourav Garg, Ming Xu, Michael Milford and Tobias Fi
 import numpy as np
 import re
 from PIL import Image
+import matplotlib.pyplot as plt
 from torch.utils.data import Dataset
 import torch.utils.data as data
 import pandas as pd
@@ -67,13 +68,12 @@ class ImagesFromList(Dataset):
 
 
 class KITTI360PANORAMA(Dataset):
-    def __init__(self, root_dir, cities='', nNeg=5, transform=None, mode='train', task='im2im', subtask='all',
+    def __init__(self, root_dir, cities='', nNeg=5, transform=None, mode='train', task='im2im', 
                  seq_length=1, posDistThr=10, negDistThr=25, cached_queries=1000, cached_negatives=1000, bs=24, threads=8, margin=0.1):
 
         # initializing
         assert mode in ('train', 'val', 'test')
         assert task in ('im2im', 'im2seq', 'seq2im', 'seq2seq')
-        assert subtask in ('all', 's2w', 'w2s', 'o2n', 'n2o', 'd2n', 'n2d')
         assert seq_length % 2 == 1
         assert (task == 'im2im' and seq_length == 1) or (task != 'im2im' and seq_length > 1)
 
@@ -105,7 +105,6 @@ class KITTI360PANORAMA(Dataset):
         # flags
         self.cache = None
         self.mode = mode
-        self.subtask = subtask
 
         # other
         self.transform = transform
@@ -113,12 +112,6 @@ class KITTI360PANORAMA(Dataset):
         # define sequence length based on task
         if task == 'im2im':
             seq_length_q, seq_length_db = 1, 1
-        elif task == 'seq2seq':
-            seq_length_q, seq_length_db = seq_length, seq_length
-        elif task == 'seq2im':
-            seq_length_q, seq_length_db = seq_length, 1
-        else:  # im2seq
-            seq_length_q, seq_length_db = 1, seq_length
 
         # load data
         for city in self.cities:
@@ -173,6 +166,7 @@ class KITTI360PANORAMA(Dataset):
                 neigh = NearestNeighbors(algorithm='brute')
                 neigh.fit(utmDb)
                 pos_distances, pos_indices = neigh.radius_neighbors(utmQ, self.posDistThr)
+                print(len(pos_indices))
                 self.all_pos_indices.extend(pos_indices)
 
                 if self.mode == 'train':
@@ -203,22 +197,13 @@ class KITTI360PANORAMA(Dataset):
 
             # when GPS / UTM / pano info is not available
             elif self.mode in ['test']:
-
-                # load images for subtask
+                # load images
                 qIdx = pd.read_csv(join(root_dir, subdir_img, city, 'query.csv'), index_col=0)
                 dbIdx = pd.read_csv(join(root_dir, subdir_img, city, 'database.csv'), index_col=0)
 
                 # arange in sequences
                 qSeqKeys, qSeqIdxs = self.arange_as_seq(qIdx, join(root_dir, subdir_img, city), seq_length_q)
                 dbSeqKeys, dbSeqIdxs = self.arange_as_seq(dbIdx, join(root_dir, subdir_img, city),seq_length_db)
-
-                # filter query based on subtask
-                val_frames = np.where(qIdx[self.subtask])[0]
-                qSeqKeys, qSeqIdxs = self.filter(qSeqKeys, qSeqIdxs, val_frames)
-
-                # filter database based on subtask
-                val_frames = np.where(dbIdx[self.subtask])[0]
-                dbSeqKeys, dbSeqIdxs = self.filter(dbSeqKeys, dbSeqIdxs, val_frames)
 
                 self.qImages.extend(qSeqKeys)
                 self.dbImages.extend(dbSeqKeys)
@@ -236,10 +221,13 @@ class KITTI360PANORAMA(Dataset):
             sys.exit()
 
         # cast to np.arrays for indexing during training
-        self.qIdx = np.asarray(self.qIdx,dtype=object)
+        self.qIdx = np.asarray(self.qIdx)
+        #self.qIdx = np.asarray(self.qIdx,dtype=object) # wired bugs but works for the warnings
         self.qImages = np.asarray(self.qImages)
-        self.pIdx = np.asarray(self.pIdx,dtype=object)
-        self.nonNegIdx = np.asarray(self.nonNegIdx,dtype=object)
+        self.pIdx = np.asarray(self.pIdx)
+        #self.pIdx = np.asarray(self.pIdx,dtype=object)
+        self.nonNegIdx = np.asarray(self.nonNegIdx)
+        #self.nonNegIdx = np.asarray(self.nonNegIdx,dtype=object)
         self.dbImages = np.asarray(self.dbImages)
 
         # decide device type ( important for triplet mining )
@@ -255,18 +243,15 @@ class KITTI360PANORAMA(Dataset):
 
     @staticmethod
     def arange_as_seq(data, path_img, seq_length):
-
         seq_keys, seq_idxs = [], []
         for idx in data.index:
-
             # find surrounding frames in sequence
             seq_idx = idx
             seq = data.iloc[seq_idx]
             img_num = int(re.sub('[a-z]', '', seq['key']))
-            seq_key = join(path_img, 'pano', 'data_rgb', '%010d' % img_num + '.png')
+            seq_key = join(path_img, 'pano', 'data_rgb', '%010d' % img_num + '.png')           
             seq_keys.append(seq_key)
             seq_idxs.append([seq_idx])         
-
         return seq_keys, np.asarray(seq_idxs)
 
     @staticmethod
@@ -328,8 +313,7 @@ class KITTI360PANORAMA(Dataset):
         self.current_subset = 0
 
     def update_subcache(self, net=None, outputdim=None):
-
-        # reset triplets
+        # reset triplets, here only data idx is stored
         self.triplets = []
 
         # if there is no network associate to the cache, then we don't do any hard negative mining.
@@ -477,6 +461,7 @@ class KITTI360PANORAMA(Dataset):
 
             self.triplets.append((triplet, target))
 
+        #print('triplet number:\t',len(self.triplets))
         # increment subset counter
         self.current_subset += 1
 
@@ -490,9 +475,17 @@ class KITTI360PANORAMA(Dataset):
         nidx = triplet[2:]
 
         # load images into triplet list
-        query = self.transform(Image.open(self.qImages[qidx]))
-        positive = self.transform(Image.open(self.dbImages[pidx]))
-        negatives = [self.transform(Image.open(self.dbImages[idx])) for idx in nidx]
+        query = self.transform(Image.open(self.qImages[qidx]).convert('RGB'))
+        positive = self.transform(Image.open(self.dbImages[pidx]).convert('RGB'))
+        negatives = [self.transform(Image.open(self.dbImages[idx]).convert('RGB')) for idx in nidx]
         negatives = torch.stack(negatives, 0)
 
         return query, positive, negatives, [qidx, pidx] + nidx
+    
+        # uncomment this for MSLS style visualization
+        # # load images into triplet list
+        # output = [torch.stack([self.transform(Image.open(im)) for im in self.qImages[qidx].split(',')])]
+        # output.append(torch.stack([self.transform(Image.open(im)) for im in self.dbImages[pidx].split(',')]))
+        # output.extend([torch.stack([self.transform(Image.open(im)) for im in self.dbImages[idx].split(',')]) for idx in nidx])
+        # # the size of output and target are identical, and the order matters
+        # return torch.cat(output), torch.tensor(target)
