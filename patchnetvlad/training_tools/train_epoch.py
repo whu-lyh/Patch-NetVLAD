@@ -62,7 +62,7 @@ def train_epoch(train_dataset, model, optimizer, criterion, encoder_dim, device,
                                           collate_fn=KITTI360PANORAMA.collate_fn, pin_memory=cuda)
 
         tqdm.write('Allocated: ' + humanbytes(torch.cuda.memory_allocated()))
-        tqdm.write('Cached:    ' + humanbytes(torch.cuda.memory_cached()))
+        tqdm.write('Cached:    ' + humanbytes(torch.cuda.memory_reserved()))
 
         model.train()
         for iteration, (query, positives, negatives, negCounts, indices) in \
@@ -110,7 +110,7 @@ def train_epoch(train_dataset, model, optimizer, criterion, encoder_dim, device,
                 writer.add_scalar('Train/nNeg', nNeg,
                                   ((epoch_num - 1) * nBatches) + iteration)
                 tqdm.write('Allocated: ' + humanbytes(torch.cuda.memory_allocated()))
-                tqdm.write('Cached:    ' + humanbytes(torch.cuda.memory_cached()))
+                tqdm.write('Cached:    ' + humanbytes(torch.cuda.memory_reserved()))
 
         startIter += len(training_data_loader)
         del training_data_loader, loss

@@ -37,6 +37,7 @@ import torch.utils.data as data
 import pandas as pd
 from os.path import join
 from sklearn.neighbors import NearestNeighbors
+import cv2
 import math
 import torch
 import random
@@ -51,6 +52,23 @@ default_cities = {
     'test': ["3"]
 }
 
+def downsample_gaussian_blur(img,ratio):
+    sigma=(1/ratio)/3
+    # ksize=np.ceil(2*sigma)
+    ksize=int(np.ceil(((sigma-0.8)/0.3+1)*2+1))
+    ksize=ksize+1 if ksize%2==0 else ksize
+    img=cv2.GaussianBlur(img,(ksize,ksize),sigma,borderType=cv2.BORDER_REFLECT101)
+    return img
+
+def resize_img(img_in, ratio):
+    # if ratio>=1.0: return img
+    img = cv2.cvtColor(np.array(img_in),cv2.COLOR_RGB2BGR)
+    h, w, _ = img.shape
+    hn, wn = int(np.round(h * ratio)), int(np.round(w * ratio))
+    img_out = cv2.resize(downsample_gaussian_blur(img, ratio), (wn, hn), cv2.INTER_LINEAR)
+    img_out = Image.fromarray(cv2.cvtColor(img_out,cv2.COLOR_BGR2RGB))
+    return img_out
+
 
 class ImagesFromList(Dataset):
     def __init__(self, images, transform):
@@ -62,6 +80,7 @@ class ImagesFromList(Dataset):
 
     def __getitem__(self, idx):
         img = Image.open(self.images[idx])
+        img = resize_img(img,0.25)
         img = self.transform(img)
 
         return img, idx
@@ -69,7 +88,7 @@ class ImagesFromList(Dataset):
 
 class KITTI360PANORAMA(Dataset):
     def __init__(self, root_dir, cities='', nNeg=5, transform=None, mode='train', task='im2im', 
-                 seq_length=1, posDistThr=10, negDistThr=25, cached_queries=1000, cached_negatives=1000, bs=24, threads=8, margin=0.1):
+                 seq_length=1, posDistThr=10, negDistThr=25, cached_queries=100, cached_negatives=100, bs=24, threads=8, margin=0.1):
 
         # initializing
         assert mode in ('train', 'val', 'test')
