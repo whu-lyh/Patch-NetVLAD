@@ -36,22 +36,23 @@ Code is dynamic and can be configured with essentially *any* number of patch siz
 import argparse
 import configparser
 import os
-from os.path import join, isfile
+from os.path import isfile, join
 
-from tqdm.auto import tqdm
+import cv2
+import numpy as np
 import torch
 import torch.nn as nn
-import numpy as np
-import cv2
-from PIL import Image
 from matplotlib import pyplot as plt
+from PIL import Image
+from tqdm.auto import tqdm
 
-
-from patchnetvlad.models.models_generic import get_backend, get_model, get_pca_encoding
-from patchnetvlad.tools.patch_matcher import PatchMatcher
-from patchnetvlad.tools.datasets import input_transform
-from patchnetvlad.models.local_matcher import calc_keypoint_centers_from_patches as calc_keypoint_centers_from_patches
+from patchnetvlad.models.local_matcher import \
+    calc_keypoint_centers_from_patches as calc_keypoint_centers_from_patches
+from patchnetvlad.models.models_generic import (get_backend, get_model,
+                                                get_pca_encoding)
 from patchnetvlad.tools import PATCHNETVLAD_ROOT_DIR
+from patchnetvlad.tools.datasets import input_transform
+from patchnetvlad.tools.patch_matcher import PatchMatcher
 
 
 def apply_patch_weights(input_scores, num_patches, patch_weights):

@@ -38,33 +38,28 @@ import configparser
 import os
 import random
 import shutil
-from os.path import join, isfile
-from os import makedirs
-from datetime import datetime
 import tempfile
+from datetime import datetime
+from os import makedirs
+from os.path import isfile, join
 
+import h5py
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-
-import h5py
-
 from torch.utils.tensorboard import SummaryWriter
-import numpy as np
-
-from patchnetvlad.training_tools.train_epoch import train_epoch
-from patchnetvlad.training_tools.val import val
-from patchnetvlad.training_tools.get_clusters import get_clusters
-from patchnetvlad.training_tools.tools import save_checkpoint
-from patchnetvlad.tools.datasets import input_transform
-from patchnetvlad.models.models_generic import get_backend, get_model
-from patchnetvlad.tools import PATCHNETVLAD_ROOT_DIR
-
 from tqdm.auto import trange
 
-from patchnetvlad.training_tools.msls import MSLS
+from patchnetvlad.models.models_generic import get_backend, get_model
+from patchnetvlad.tools import PATCHNETVLAD_ROOT_DIR
+from patchnetvlad.tools.datasets import input_transform
+from patchnetvlad.training_tools.get_clusters import get_clusters
 from patchnetvlad.training_tools.kitti360panorama import KITTI360PANORAMA
-
+from patchnetvlad.training_tools.msls import MSLS
+from patchnetvlad.training_tools.tools import save_checkpoint
+from patchnetvlad.training_tools.train_epoch import train_epoch
+from patchnetvlad.training_tools.val import val
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Patch-NetVLAD-train')
@@ -83,11 +78,11 @@ if __name__ == "__main__":
                         help='Root directory of dataset')
     parser.add_argument('--identifier', type=str, default='mapillary_nopanos',
                         help='Description of this model, e.g. mapillary_nopanos_vgg16_netvlad')
-    parser.add_argument('--nEpochs', type=int, default=30, help='number of epochs to train for')
+    parser.add_argument('--nEpochs', type=int, default=50, help='number of epochs to train for')
     parser.add_argument('--start_epoch', default=0, type=int, metavar='N',
                         help='manual epoch number (useful on restarts)')
     parser.add_argument('--save_every_epoch', action='store_true', help='Flag to set a separate checkpoint file for each new epoch')
-    parser.add_argument('--threads', type=int, default=0, help='Number of threads for each data loader to use')
+    parser.add_argument('--threads', type=int, default=16, help='Number of threads for each data loader to use')
     parser.add_argument('--nocuda', action='store_true', help='If true, use CPU only. Else use GPU.')
 
 
@@ -152,7 +147,7 @@ if __name__ == "__main__":
             print('===> Finding cluster centroids')
 
             print('===> Loading dataset(s) for clustering')
-            train_dataset = KITTI360PANORAMA(opt.dataset_root_dir, mode='val', cities='train', transform=input_transform(),
+            train_dataset = MSLS(opt.dataset_root_dir, save = True, mode='val', cities='train', transform=input_transform(),
                                  bs=int(config['train']['cachebatchsize']), threads=opt.threads,
                                  margin=float(config['train']['margin']))
 
@@ -163,7 +158,7 @@ if __name__ == "__main__":
 
             # a little hacky, but needed to easily run init_params
             model = model.to(device="cpu")
-
+    
         with h5py.File(initcache, mode='r') as h5:
             clsts = h5.get("centroids")[...]
             traindescs = h5.get("descriptors")[...]
@@ -199,12 +194,43 @@ if __name__ == "__main__":
 
     print('===> Loading dataset(s)')
     exlude_panos_training = not config['train'].getboolean('includepanos')
-    train_dataset = KITTI360PANORAMA(opt.dataset_root_dir, mode='train', nNeg=int(config['train']['nNeg']), transform=input_transform(),
+    # save the image list to npy files so that the loading is faster
+    if not os.path.exists(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad')):
+        print('npys_patch_netvlad not found, create:', os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad'))
+        os.mkdir(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad'))
+        _ = MSLS(root_dir=opt.dataset_root_dir, save=True, mode='val', posDistThr=25)
+        _ = MSLS(root_dir=opt.dataset_root_dir, save=True, mode='train')
+    
+    # here only process the single city for accommodate the whole dataset   
+    # or test the pipeline, both train and test dataset are the smallest
+    train_dataset = MSLS(opt.dataset_root_dir, cities='zurich', mode='train', nNeg=int(config['train']['nNeg']), transform=input_transform(),
                          bs=int(config['train']['cachebatchsize']), threads=opt.threads, margin=float(config['train']['margin']))
 
-    validation_dataset = KITTI360PANORAMA(opt.dataset_root_dir, mode='val', transform=input_transform(),
+    validation_dataset = MSLS(opt.dataset_root_dir, cities="cph,sf", mode='val', transform=input_transform(),
                               bs=int(config['train']['cachebatchsize']), threads=opt.threads,
                               margin=float(config['train']['margin']), posDistThr=25)
+    
+    # train_dataset.qIdx = np.load(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad', 'msls_train_qIdx.npy'))
+    # train_dataset.dbImages = np.load(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad', 'msls_train_dbImages.npy'))
+    # train_dataset.qImages = np.load(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad', 'msls_train_qImages.npy'))
+    # train_dataset.pIdx = np.load(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad', 'msls_train_pIdx.npy'), allow_pickle=True)
+    # train_dataset.nonNegIdx = np.load(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad', 'msls_train_nonNegIdx.npy'), allow_pickle=True)
+    # train_dataset.sideways = np.load(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad', 'msls_train_sideways.npy'))
+    # train_dataset.night = np.load(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad', 'msls_train_night.npy'))
+    # # for negative mining scheme
+    # train_dataset.negCache = np.asarray([np.empty((0,), dtype=int)] * len(train_dataset.qIdx))
+    # train_dataset.__calcSamplingWeights__()
+
+    # validation_dataset.qIdx = np.load(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad', 'msls_val_qIdx.npy'))
+    # validation_dataset.dbImages = np.load(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad', 'msls_val_dbImages.npy'))
+    # validation_dataset.qImages = np.load(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad', 'msls_val_qImages.npy'))
+    # validation_dataset.pIdx = np.load(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad', 'msls_val_pIdx.npy'), allow_pickle=True)
+    # validation_dataset.nonNegIdx = np.load(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad', 'msls_val_nonNegIdx.npy'), allow_pickle=True)
+    # validation_dataset.sideways = np.load(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad', 'msls_val_sideways.npy'))
+    # validation_dataset.night = np.load(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad', 'msls_val_night.npy'))
+    # validation_dataset.all_pos_indices = np.load(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad', 'msls_val_all_pos_indices.npy'), allow_pickle=True)
+    # validation_dataset.qEndPosList = np.load(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad', 'msls_val_qEndPosList.npy'), allow_pickle=True)
+    # validation_dataset.dbEndPosList = np.load(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad', 'msls_val_dbEndPosList.npy'), allow_pickle=True)
 
     print('===> Training query set:', len(train_dataset.qIdx))
     print('===> Evaluating on val set, query count:', len(validation_dataset.qIdx))

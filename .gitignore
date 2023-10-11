@@ -6,6 +6,8 @@ patchnetvlad/pretrained_models/*
 patchnetvlad/results/*
 patchnetvlad/output_features/*
 results/*
+*.pth
+log/
 
 ## Python stuff
 # Byte-compiled / optimized / DLL files

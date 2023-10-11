@@ -55,14 +55,14 @@ def train_epoch(train_dataset, model, optimizer, criterion, encoder_dim, device,
             pool_size *= int(config['global_params']['num_clusters'])
 
         tqdm.write('====> Building Cache')
-        train_dataset.update_subcache(model, pool_size)
+        train_dataset.update_subcache(model, pool_size, epoch_num)
 
         training_data_loader = DataLoader(dataset=train_dataset, num_workers=opt.threads,
                                           batch_size=int(config['train']['batchsize']), shuffle=True,
-                                          collate_fn=KITTI360PANORAMA.collate_fn, pin_memory=cuda)
+                                          collate_fn=MSLS.collate_fn, pin_memory=cuda)
 
-        tqdm.write('Allocated: ' + humanbytes(torch.cuda.memory_allocated()))
-        tqdm.write('Cached:    ' + humanbytes(torch.cuda.memory_reserved()))
+        # tqdm.write('Allocated: ' + humanbytes(torch.cuda.memory_allocated()))
+        # tqdm.write('Cached:    ' + humanbytes(torch.cuda.memory_reserved()))
 
         model.train()
         for iteration, (query, positives, negatives, negCounts, indices) in \
@@ -102,15 +102,15 @@ def train_epoch(train_dataset, model, optimizer, criterion, encoder_dim, device,
             batch_loss = loss.item()
             epoch_loss += batch_loss
 
-            if iteration % 50 == 0 or nBatches <= 10:
+            if iteration % 100 == 0 or nBatches <= 10:
                 tqdm.write("==> Epoch[{}]({}/{}): Loss: {:.4f}".format(epoch_num, iteration,
                                                                        nBatches, batch_loss))
                 writer.add_scalar('Train/Loss', batch_loss,
                                   ((epoch_num - 1) * nBatches) + iteration)
                 writer.add_scalar('Train/nNeg', nNeg,
                                   ((epoch_num - 1) * nBatches) + iteration)
-                tqdm.write('Allocated: ' + humanbytes(torch.cuda.memory_allocated()))
-                tqdm.write('Cached:    ' + humanbytes(torch.cuda.memory_reserved()))
+                # tqdm.write('Allocated: ' + humanbytes(torch.cuda.memory_allocated()))
+                # tqdm.write('Cached:    ' + humanbytes(torch.cuda.memory_reserved()))
 
         startIter += len(training_data_loader)
         del training_data_loader, loss

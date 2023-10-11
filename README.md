@@ -156,6 +156,18 @@ This will add an additional checkpoint file to the same folder as resume_path, e
 ## FAQ
 ![Patch-NetVLAD qualitative results](./assets/patch_netvlad_qualitative_results.jpg)
 
+### Practical test
+
++ The vadilation module support the multi-sequences. And return an average recall metric.
+> For multi-sequence testing, the recall will be averaged based on whole val datasets
++ The recall@1 at first epoch of whole training dataset could be almost 56%. But the recall decreas slightly
++ The GPU usage is fluctuated.
++ The partial negative mining is pretty much time-efficient, compared with the cross modality retrieval.
+
+#### TODO
+
++ More training epoch should be done!
+
 ### How to Create New Ground Truth Files
 
 We provide three ready-to-go ground truth files in the dataset_gt_files folder, however, for evaluation on other datasets you will need to create your own .npz ground truth data files.

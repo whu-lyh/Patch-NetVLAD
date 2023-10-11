@@ -28,25 +28,25 @@ Modified by Stephen Hausler, Sourav Garg, Ming Xu, Michael Milford and Tobias Fi
 '''
 
 
-import numpy as np
-from PIL import Image
-from torch.utils.data import Dataset
-import torch.utils.data as data
-import pandas as pd
-from os.path import join
-from sklearn.neighbors import NearestNeighbors
+import itertools
 import math
-import torch
 import random
 import sys
-import itertools
-from tqdm import tqdm
+from os.path import join
 
+import numpy as np
+import pandas as pd
+import torch
+import torch.utils.data as data
+from PIL import Image
+from sklearn.neighbors import NearestNeighbors
+from torch.utils.data import Dataset
+from tqdm import tqdm
 
 default_cities = {
     'train': ["trondheim", "london", "boston", "melbourne", "amsterdam", "helsinki",
-              "tokyo", "toronto", "saopaulo", "moscow", "zurich", "paris", "bangkok",
-              "budapest", "austin", "berlin", "ottawa", "phoenix", "goa", "amman", "nairobi", "manila"],
+        "tokyo", "toronto", "saopaulo", "moscow", "zurich", "paris", "bangkok",
+        "budapest", "austin", "berlin", "ottawa", "phoenix", "goa", "amman", "nairobi", "manila"],
     'val': ["cph", "sf"],
     'test': ["miami", "athens", "buenosaires", "stockholm", "bengaluru", "kampala"]
 }
@@ -74,7 +74,7 @@ class ImagesFromList(Dataset):
 
 
 class MSLS(Dataset):
-    def __init__(self, root_dir, cities='', nNeg=5, transform=None, mode='train', task='im2im', subtask='all',
+    def __init__(self, root_dir, save = False, cities='', nNeg=5, transform=None, mode='train', task='im2im', subtask='all',
                  seq_length=1, posDistThr=10, negDistThr=25, cached_queries=1000, cached_negatives=1000,
                  positive_sampling=True, bs=24, threads=8, margin=0.1, exclude_panos=True):
 
@@ -290,6 +290,19 @@ class MSLS(Dataset):
         self.sideways = np.asarray(self.sideways)
         self.night = np.asarray(self.night)
 
+        if save:
+            np.save(join(root_dir, 'npys_patch_netvlad', 'msls_' + self.mode + '_qIdx.npy'), self.qIdx)
+            np.save(join(root_dir, 'npys_patch_netvlad', 'msls_' + self.mode + '_qImages.npy'), self.qImages)
+            np.save(join(root_dir, 'npys_patch_netvlad', 'msls_' + self.mode + '_dbImages.npy'), self.dbImages)
+            np.save(join(root_dir, 'npys_patch_netvlad', 'msls_' + self.mode + '_pIdx.npy'), self.pIdx)
+            np.save(join(root_dir, 'npys_patch_netvlad', 'msls_' + self.mode + '_nonNegIdx.npy'), self.nonNegIdx)
+            np.save(join(root_dir, 'npys_patch_netvlad', 'msls_' + self.mode + '_sideways.npy'), np.array(self.sideways))
+            np.save(join(root_dir, 'npys_patch_netvlad', 'msls_' + self.mode + '_night.npy'), np.array(self.night))
+            if mode == 'val':
+                np.save(join(root_dir, 'npys_patch_netvlad', 'msls_' + self.mode + '_all_pos_indices.npy'), np.array(self.all_pos_indices))
+                np.save(join(root_dir, 'npys_patch_netvlad', 'msls_' + self.mode + '_qEndPosList.npy'), np.array(self.qEndPosList))
+                np.save(join(root_dir, 'npys_patch_netvlad', 'msls_' + self.mode + '_dbEndPosList.npy'), np.array(self.dbEndPosList))
+
         # decide device type ( important for triplet mining )
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.threads = threads
@@ -413,14 +426,14 @@ class MSLS(Dataset):
         # reset subset counter
         self.current_subset = 0
 
-    def update_subcache(self, net=None, outputdim=None):
+    def update_subcache(self, net=None, outputdim=None, epoch_num=0):
 
         # reset triplets
         self.triplets = []
 
         # if there is no network associate to the cache, then we don't do any hard negative mining.
         # Instead we just create some naive triplets based on distance.
-        if net is None:
+        if net is None or epoch_num <= 2:
             qidxs = np.random.choice(len(self.qIdx), self.cached_queries, replace=False)
 
             for q in qidxs:

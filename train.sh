@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
+
 # local machine
 python train.py \
---config_path patchnetvlad/configs/train.ini \
---cache_path=/data-lyh2/KITTI360/patch-netvlad_tmp/cache \
---save_path=/data-lyh2/KITTI360/patch-netvlad_tmp/checkpoint \
---dataset_root_dir=/data-lyh \
---cluster_path=/data-lyh2/KITTI360/patch-netvlad_tmp/cache/centroids/vgg16_mapillary_16_desc_cen.hdf5
+    --config_path=/workspace/Patch-NetVLAD/patchnetvlad/configs/train.ini \
+    --cache_path=/workspace/Patch-NetVLAD/log/cache \
+    --save_path=/workspace/Patch-NetVLAD/log/checkpoint \
+    --dataset_root_dir=/lyh/MSLS \
+    --identifier="mapillary_nopanos_new" \
+    --threads=0 \
+    --cluster_path=/workspace/Patch-NetVLAD/log/cache/centroids/vgg16_mapillary_16_desc_cen.hdf5
 
 # remote server kitti360panorama
 # python train.py \

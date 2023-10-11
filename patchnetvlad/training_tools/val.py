@@ -88,6 +88,8 @@ def val(eval_set, model, encoder_dim, device, opt, config, writer, epoch_num=0, 
     # any combination of mapillary cities will work as a val set
     qEndPosTot = 0
     dbEndPosTot = 0
+    print("eval_set.qEndPosList: ", eval_set.qEndPosList)
+    print("eval_set.dbEndPosList: ", eval_set.dbEndPosList)
     for cityNum, (qEndPos, dbEndPos) in enumerate(zip(eval_set.qEndPosList, eval_set.dbEndPosList)):
         faiss_index = faiss.IndexFlatL2(pool_size)
         faiss_index.add(dbFeat[dbEndPosTot:dbEndPosTot+dbEndPos, :])
@@ -101,12 +103,15 @@ def val(eval_set, model, encoder_dim, device, opt, config, writer, epoch_num=0, 
 
     correct_at_n = np.zeros(len(n_values))
     # TODO can we do this on the matrix in one go?
+    print("type of predictions: ", type(predictions)) # should be <class 'numpy.ndarray'>
+    print("size of predictions: ", predictions.shape) # should be (total number of query data, max(n_values))
     for qIx, pred in enumerate(predictions):
         for i, n in enumerate(n_values):
             # if in top N then also in top NN, where NN > N
             if np.any(np.in1d(pred[:n], gt[qIx])):
                 correct_at_n[i:] += 1
                 break
+    print("len(eval_set.qIdx): ", len(eval_set.qIdx)) # should be total number of query data
     recall_at_n = correct_at_n / len(eval_set.qIdx)
 
     all_recalls = {}  # make dict for output
