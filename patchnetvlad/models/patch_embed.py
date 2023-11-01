@@ -26,8 +26,9 @@ class PatchEmbed(nn.Module):
         super().__init__()
         self.patch_size = to_2tuple(patch_size)
         if img_size is not None:
-            self.img_size = to_2tuple(img_size)
-            self.grid_size = tuple([s // p for s, p in zip(self.img_size, self.patch_size)])
+            # self.img_size = to_2tuple(img_size)
+            self.img_size = tuple([240, 320]) # for vit+smd module
+            self.grid_size = tuple([s // p for s, p in zip((self.img_size), self.patch_size)])
             self.num_patches = self.grid_size[0] * self.grid_size[1]
         else:
             self.img_size = None

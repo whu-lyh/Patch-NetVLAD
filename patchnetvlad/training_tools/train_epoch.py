@@ -83,11 +83,8 @@ def train_epoch(train_dataset, model, optimizer, criterion, encoder_dim, device,
             data_input = torch.cat([query, positives, negatives])
 
             data_input = data_input.to(device)
-            if opt.model != 'vit':
-                image_encoding = model.encoder(data_input)
-                vlad_encoding = model.pool(image_encoding)
-            else:
-                vlad_encoding = model.encoder(data_input)
+            image_encoding = model.encoder(data_input)
+            vlad_encoding = model.pool(image_encoding)
 
             vladQ, vladP, vladN = torch.split(vlad_encoding, [B, B, nNeg])
 
@@ -105,10 +102,7 @@ def train_epoch(train_dataset, model, optimizer, criterion, encoder_dim, device,
             loss /= nNeg.float().to(device)  # normalise by actual number of negatives
             loss.backward()
             optimizer.step()
-            if opt.model != 'vit':
-                del data_input, image_encoding, vlad_encoding, vladQ, vladP, vladN
-            else:
-                del data_input, vladQ, vladP, vladN
+            del data_input, image_encoding, vlad_encoding, vladQ, vladP, vladN
             del query, positives, negatives
 
             batch_loss = loss.item()

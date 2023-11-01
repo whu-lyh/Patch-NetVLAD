@@ -117,19 +117,19 @@ class Block(nn.Module):
         self.ls1 = LayerScale(dim, init_values=init_values) if init_values else nn.Identity()
         self.drop_path1 = DropPath(drop_path) if drop_path > 0. else nn.Identity()
 
-        self.norm2 = norm_layer(dim)
-        self.mlp = mlp_layer(
-            in_features=dim,
-            hidden_features=int(dim * mlp_ratio),
-            act_layer=act_layer,
-            drop=proj_drop,
-        )
-        self.ls2 = LayerScale(dim, init_values=init_values) if init_values else nn.Identity()
-        self.drop_path2 = DropPath(drop_path) if drop_path > 0. else nn.Identity()
+        # self.norm2 = norm_layer(dim)
+        # self.mlp = mlp_layer(
+        #     in_features=dim,
+        #     hidden_features=int(dim * mlp_ratio),
+        #     act_layer=act_layer,
+        #     drop=proj_drop,
+        # )
+        # self.ls2 = LayerScale(dim, init_values=init_values) if init_values else nn.Identity()
+        # self.drop_path2 = DropPath(drop_path) if drop_path > 0. else nn.Identity()
 
     def forward(self, x):
         x = x + self.drop_path1(self.ls1(self.attn(self.norm1(x))))
-        x = x + self.drop_path2(self.ls2(self.mlp(self.norm2(x))))
+        # x = x + self.drop_path2(self.ls2(self.mlp(self.norm2(x))))
         return x
 
 
@@ -255,7 +255,7 @@ class VisionTransformer(nn.Module):
         """
         super().__init__()
         assert global_pool in ('', 'avg', 'token')
-        assert class_token or global_pool != 'token'
+        # assert class_token or global_pool != 'token'
         use_fc_norm = global_pool == 'avg' if fc_norm is None else fc_norm
         norm_layer = norm_layer or partial(nn.LayerNorm, eps=1e-6)
         act_layer = act_layer or nn.GELU
@@ -307,11 +307,11 @@ class VisionTransformer(nn.Module):
             for i in range(depth)])
         self.norm = norm_layer(embed_dim) if not use_fc_norm else nn.Identity()
         # Global Average Pooling
-        self.GAP = nn.AdaptiveAvgPool1d(1)
+        # self.GAP = nn.AdaptiveAvgPool1d(1)
         # Classifier Head
-        # self.fc_norm = norm_layer(embed_dim) if use_fc_norm else nn.Identity()
-        # self.head_drop = nn.Dropout(drop_rate)
-        # self.head = nn.Linear(self.embed_dim, num_classes) if num_classes > 0 else nn.Identity()
+        self.fc_norm = norm_layer(embed_dim) if use_fc_norm else nn.Identity()
+        self.head_drop = nn.Dropout(drop_rate)
+        self.head = nn.Linear(self.embed_dim, num_classes) if num_classes > 0 else nn.Identity()
 
         if weight_init != 'skip':
             self.init_weights(weight_init)
@@ -459,9 +459,10 @@ class VisionTransformer(nn.Module):
 
     def forward(self, x):
         x = self.forward_features(x)
+        x = self.head(x)
         # FIXME usage?
         # x = self.forward_head(x)
-        x = self.forward_global_feat(x, feat_type='GAP')
+        # x = self.forward_global_feat(x, feat_type='GAP')
         return x
 
 
@@ -731,12 +732,12 @@ class VisionTransformerEncoder(VisionTransformer):
                 config (dict): variant model configurations
                 pretrained (bool): load pretrained weights
         '''
-        img_size = [480, 640]
+        img_size = [240, 320] # for vit+smd module
         # get vit stem
         vision_width = 384
         model_args = dict(img_size=img_size, patch_size=16, embed_dim=vision_width, depth=6, num_heads=6, 
                             qkv_bias=False, init_values=1e-5, class_token=False, 
-                            embed_layer=PatchEmbed, block_fn=ResPostBlock, global_pool='avg')
+                            embed_layer=PatchEmbed, block_fn=ResPostBlock, global_pool='token') # token for vit+smd mode
         # build_model_with_cfg is a func from timm inside
         visual_encoder = build_model_with_cfg(
             VisionTransformer,

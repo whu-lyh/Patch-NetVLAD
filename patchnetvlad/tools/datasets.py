@@ -36,7 +36,7 @@ from sklearn.neighbors import NearestNeighbors
 from patchnetvlad.tools import PATCHNETVLAD_ROOT_DIR
 
 
-def input_transform(resize=(480, 640)):
+def input_transform(resize=(240,320)):# 240,320 for vit+smd module
     if resize[0] > 0 and resize[1] > 0:
         return transforms.Compose([
             transforms.Resize(resize),

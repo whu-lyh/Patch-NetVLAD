@@ -69,8 +69,9 @@ def get_backend():
 
 
 def get_vit_backend():
-    enc_dim = 384
+    enc_dim = 384 * 8 # 8 defined inside SMD layer
     image_encoder = VisionTransformerEncoder.from_config()
+    image_encoder.reset_classifier(0) # vit+smd mode
     return enc_dim, image_encoder
 
 
@@ -109,7 +110,34 @@ def get_model(encoder, encoder_dim, config, append_pca_layer=False):
     return nn_model
 
 
+class SMD(nn.Module):
+    '''
+        SMD block used in SAIG for feature pooling
+        Input: B, N, C(=384)
+        Output: B, C(=384)
+    '''
+    def __init__(self):
+        super().__init__()
+        # self.linear1 = nn.Linear(256, 1024)
+        self.linear1 = nn.Linear(300, 1024)
+        self.act = nn.GELU()
+        self.linear2 = nn.Linear(1024, 256)
+        self.linear3 = nn.Linear(256, 8)      
+        
+    def forward(self, x):        
+        x = x.transpose(-1,-2) # [B C N]
+        x = self.linear1(x) # [B C 1024]
+        x = self.act(x)
+        x = self.linear2(x) # [B C 256]
+        x = self.linear3(x) # [B C 8]
+        x = x.transpose(-1,-2) # [B, 8, C]
+        x = x.flatten(-2,-1) # [B 8xC]
+        return x
+
+
 def get_vit_model(encoder, encoder_dim):
     nn_model = nn.Module()
     nn_model.add_module('encoder', encoder)
+    smd_pooling = SMD()
+    nn_model.add_module('pool', smd_pooling)
     return nn_model

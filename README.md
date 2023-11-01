@@ -153,6 +153,8 @@ python add_pca.py \
 
 This will add an additional checkpoint file to the same folder as resume_path, except including a WPCA layer.
 
++ I added a vit+smd based backbone for testing the performance of the backbone, which doesn't require the .h5 file
+
 ## FAQ
 ![Patch-NetVLAD qualitative results](./assets/patch_netvlad_qualitative_results.jpg)
 

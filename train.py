@@ -249,7 +249,7 @@ if __name__ == "__main__":
         # validation_dataset.qEndPosList = np.load(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad', 'msls_val_qEndPosList.npy'), allow_pickle=True)
         # validation_dataset.dbEndPosList = np.load(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad', 'msls_val_dbEndPosList.npy'), allow_pickle=True)
     else:
-        train_dataset = MSLS(opt.dataset_root_dir, cities='berlin', mode='train', nNeg=int(config['train']['nNeg']), transform=input_transform(),
+        train_dataset = MSLS(opt.dataset_root_dir, cities='tokyo,boston,berlin', mode='train', nNeg=int(config['train']['nNeg']), transform=input_transform(),
                         bs=int(config['train']['cachebatchsize']), threads=opt.threads, margin=float(config['train']['margin']))
 
         validation_dataset = MSLS(opt.dataset_root_dir, cities="sf", mode='val', transform=input_transform(),

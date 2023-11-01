@@ -17,8 +17,8 @@ python train.py \
     --save_path=/workspace/Patch-NetVLAD/log/checkpoint \
     --dataset_root_dir=/lyh/MSLS \
     --dataset='msls' \
-    --identifier="mapillary_nopanos" \
-    --threads=1
+    --identifier="mapillary_nopanos_smd" \
+    --threads=8
     # --cluster_path=/workspace/Patch-NetVLAD/log/cache/centroids/vgg16_KITTI360_16_desc_cen.hdf5
 
 # remote server kitti360panorama
