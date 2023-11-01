@@ -8,3 +8,5 @@ faiss-gpu
 matplotlib
 torch
 tensorboard
+timm
+opencv-python

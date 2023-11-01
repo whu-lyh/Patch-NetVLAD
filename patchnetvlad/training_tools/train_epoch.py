@@ -39,9 +39,9 @@ from patchnetvlad.training_tools.kitti360panorama import KITTI360PANORAMA
 
 def train_epoch(train_dataset, model, optimizer, criterion, encoder_dim, device, epoch_num, opt, config, writer):
     if device.type == 'cuda':
-        cuda = True
+        is_cuda = True
     else:
-        cuda = False
+        is_cuda = False
     train_dataset.new_epoch()
 
     epoch_loss = 0
@@ -51,15 +51,21 @@ def train_epoch(train_dataset, model, optimizer, criterion, encoder_dim, device,
 
     for subIter in trange(train_dataset.nCacheSubset, desc='Cache refresh'.rjust(15), position=1):
         pool_size = encoder_dim
-        if config['global_params']['pooling'].lower() == 'netvlad':
-            pool_size *= int(config['global_params']['num_clusters'])
+        if opt.model != 'vit':
+            if config['global_params']['pooling'].lower() == 'netvlad':
+                pool_size *= int(config['global_params']['num_clusters'])
 
         tqdm.write('====> Building Cache')
-        train_dataset.update_subcache(model, pool_size, epoch_num)
+        train_dataset.update_subcache(None, pool_size, epoch_num)
 
-        training_data_loader = DataLoader(dataset=train_dataset, num_workers=opt.threads,
+        if opt.dataset != 'kittl360':
+            training_data_loader = DataLoader(dataset=train_dataset, num_workers=opt.threads,
                                           batch_size=int(config['train']['batchsize']), shuffle=True,
-                                          collate_fn=MSLS.collate_fn, pin_memory=cuda)
+                                          collate_fn=MSLS.collate_fn, pin_memory=is_cuda)
+        else:
+            training_data_loader = DataLoader(dataset=train_dataset, num_workers=opt.threads,
+                                          batch_size=int(config['train']['batchsize']), shuffle=True,
+                                          collate_fn=KITTI360PANORAMA.collate_fn, pin_memory=is_cuda)
 
         # tqdm.write('Allocated: ' + humanbytes(torch.cuda.memory_allocated()))
         # tqdm.write('Cached:    ' + humanbytes(torch.cuda.memory_reserved()))
@@ -77,8 +83,11 @@ def train_epoch(train_dataset, model, optimizer, criterion, encoder_dim, device,
             data_input = torch.cat([query, positives, negatives])
 
             data_input = data_input.to(device)
-            image_encoding = model.encoder(data_input)
-            vlad_encoding = model.pool(image_encoding)
+            if opt.model != 'vit':
+                image_encoding = model.encoder(data_input)
+                vlad_encoding = model.pool(image_encoding)
+            else:
+                vlad_encoding = model.encoder(data_input)
 
             vladQ, vladP, vladN = torch.split(vlad_encoding, [B, B, nNeg])
 
@@ -96,7 +105,10 @@ def train_epoch(train_dataset, model, optimizer, criterion, encoder_dim, device,
             loss /= nNeg.float().to(device)  # normalise by actual number of negatives
             loss.backward()
             optimizer.step()
-            del data_input, image_encoding, vlad_encoding, vladQ, vladP, vladN
+            if opt.model != 'vit':
+                del data_input, image_encoding, vlad_encoding, vladQ, vladP, vladN
+            else:
+                del data_input, vladQ, vladP, vladN
             del query, positives, negatives
 
             batch_loss = loss.item()

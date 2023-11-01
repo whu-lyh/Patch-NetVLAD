@@ -37,6 +37,24 @@ from torch.utils.data import DataLoader
 from patchnetvlad.training_tools.msls import ImagesFromList
 from patchnetvlad.tools.datasets import input_transform
 
+def save_gt(gt: list,
+            eval_dataset: torch.utils.data.Dataset,
+            file_path: str):
+    '''
+        The image branch is saved for clarification
+    '''
+    gt_index = []
+    gt_lists = []
+    import os
+    import json
+    for i in range(len(gt)):
+        gt_index.append(os.path.basename(eval_dataset.qImages[i]))
+        pos_indices = gt[i]
+        pics = [os.path.basename(eval_dataset.dbImages[p]) for p in pos_indices]
+        gt_lists.append(pics)
+    gt_dic = dict(zip(gt_index, gt_lists))
+    with open(os.path.join(file_path), 'w', encoding='utf-8') as file:
+        file.write(json.dumps(gt_dic, indent=4))
 
 def val(eval_set, model, encoder_dim, device, opt, config, writer, epoch_num=0, write_tboard=False, pbar_position=0):
     if device.type == 'cuda':
@@ -56,8 +74,9 @@ def val(eval_set, model, encoder_dim, device, opt, config, writer, epoch_num=0, 
     with torch.no_grad():
         tqdm.write('====> Extracting Features')
         pool_size = encoder_dim
-        if config['global_params']['pooling'].lower() == 'netvlad':
-            pool_size *= int(config['global_params']['num_clusters'])
+        if opt.model != 'vit':
+            if config['global_params']['pooling'].lower() == 'netvlad':
+                pool_size *= int(config['global_params']['num_clusters'])
         qFeat = np.empty((len(eval_set_queries), pool_size), dtype=np.float32)
         dbFeat = np.empty((len(eval_set_dbs), pool_size), dtype=np.float32)
 
@@ -65,12 +84,16 @@ def val(eval_set, model, encoder_dim, device, opt, config, writer, epoch_num=0, 
             for iteration, (input_data, indices) in \
                     enumerate(tqdm(test_data_loader, position=pbar_position, leave=False, desc='Test Iter'.rjust(15)), 1):
                 input_data = input_data.to(device)
-                image_encoding = model.encoder(input_data)
-
-                vlad_encoding = model.pool(image_encoding)
+                if opt.model != 'vit':
+                    image_encoding = model.encoder(input_data)
+                    vlad_encoding = model.pool(image_encoding)
+                else:
+                    vlad_encoding = model.encoder(input_data)
                 feat[indices.detach().numpy(), :] = vlad_encoding.detach().cpu().numpy()
-
-                del input_data, image_encoding, vlad_encoding
+                if opt.model != 'vit':
+                    del input_data, image_encoding, vlad_encoding
+                else:
+                    del input_data, vlad_encoding
 
     del test_data_loader_queries, test_data_loader_dbs
 
@@ -80,22 +103,23 @@ def val(eval_set, model, encoder_dim, device, opt, config, writer, epoch_num=0, 
     faiss_index.add(dbFeat)
 
     tqdm.write('====> Calculating recall @ N')
-    n_values = [1, 5, 10, 20, 50, 100]
+    n_values = [1, 5, 10, 20, 50]#, 100]
 
     # for each query get those within threshold distance
     gt = eval_set.all_pos_indices
-
+    # save_gt(gt, eval_set, "./gt.json")
     # any combination of mapillary cities will work as a val set
     qEndPosTot = 0
     dbEndPosTot = 0
-    print("eval_set.qEndPosList: ", eval_set.qEndPosList)
-    print("eval_set.dbEndPosList: ", eval_set.dbEndPosList)
+    # print("eval_set.qEndPosList: ", eval_set.qEndPosList)
+    # print("eval_set.dbEndPosList: ", eval_set.dbEndPosList)
     for cityNum, (qEndPos, dbEndPos) in enumerate(zip(eval_set.qEndPosList, eval_set.dbEndPosList)):
         faiss_index = faiss.IndexFlatL2(pool_size)
         faiss_index.add(dbFeat[dbEndPosTot:dbEndPosTot+dbEndPos, :])
         _, preds = faiss_index.search(qFeat[qEndPosTot:qEndPosTot+qEndPos, :], max(n_values))
         if cityNum == 0:
             predictions = preds
+            # print(preds)
         else:
             predictions = np.vstack((predictions, preds))
         qEndPosTot += qEndPos
@@ -103,15 +127,18 @@ def val(eval_set, model, encoder_dim, device, opt, config, writer, epoch_num=0, 
 
     correct_at_n = np.zeros(len(n_values))
     # TODO can we do this on the matrix in one go?
-    print("type of predictions: ", type(predictions)) # should be <class 'numpy.ndarray'>
-    print("size of predictions: ", predictions.shape) # should be (total number of query data, max(n_values))
+    # print("type of predictions: ", type(predictions)) # should be <class 'numpy.ndarray'>
+    # print("size of predictions: ", predictions.shape) # should be (total number of query data, max(n_values))
     for qIx, pred in enumerate(predictions):
+        # skip the query which have no closer gt data
+        if len(gt[qIx]) == 0:
+            continue
         for i, n in enumerate(n_values):
             # if in top N then also in top NN, where NN > N
             if np.any(np.in1d(pred[:n], gt[qIx])):
                 correct_at_n[i:] += 1
                 break
-    print("len(eval_set.qIdx): ", len(eval_set.qIdx)) # should be total number of query data
+    # print("len(eval_set.qIdx): ", len(eval_set.qIdx)) # should be total number of query data
     recall_at_n = correct_at_n / len(eval_set.qIdx)
 
     all_recalls = {}  # make dict for output

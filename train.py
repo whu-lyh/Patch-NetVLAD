@@ -49,9 +49,10 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.tensorboard import SummaryWriter
-from tqdm.auto import trange
+from tqdm import trange
 
-from patchnetvlad.models.models_generic import get_backend, get_model
+from patchnetvlad.models.models_generic import (get_backend, get_model,
+                                                get_vit_backend, get_vit_model)
 from patchnetvlad.tools import PATCHNETVLAD_ROOT_DIR
 from patchnetvlad.tools.datasets import input_transform
 from patchnetvlad.training_tools.get_clusters import get_clusters
@@ -63,7 +64,8 @@ from patchnetvlad.training_tools.val import val
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Patch-NetVLAD-train')
-
+    parser.add_argument('--dataset', type=str, default='kitti360', help='Select datasets.', choices=['msls', 'kitti360'])
+    parser.add_argument('--model', type=str, default='vit', help='Select models.', choices=['patchnetvlad', 'vit'])
     parser.add_argument('--config_path', type=str, default=join(PATCHNETVLAD_ROOT_DIR, 'configs/train.ini'),
                         help='File name (with extension) to an ini file that stores most of the configuration data for patch-netvlad')
     parser.add_argument('--cache_path', type=str, default=tempfile.mkdtemp(),
@@ -82,7 +84,7 @@ if __name__ == "__main__":
     parser.add_argument('--start_epoch', default=0, type=int, metavar='N',
                         help='manual epoch number (useful on restarts)')
     parser.add_argument('--save_every_epoch', action='store_true', help='Flag to set a separate checkpoint file for each new epoch')
-    parser.add_argument('--threads', type=int, default=16, help='Number of threads for each data loader to use')
+    parser.add_argument('--threads', type=int, default=0, help='Number of threads for each data loader to use')
     parser.add_argument('--nocuda', action='store_true', help='If true, use CPU only. Else use GPU.')
 
 
@@ -111,59 +113,65 @@ if __name__ == "__main__":
     scheduler = None
 
     print('===> Building model')
+    if opt.model != 'vit':
+        encoder_dim, encoder = get_backend()
+    else:
+        encoder_dim, encoder = get_vit_backend()
 
-    encoder_dim, encoder = get_backend()
+    if opt.model != 'vit':
+        if opt.resume_path: # if already started training earlier and continuing
+            if isfile(opt.resume_path):
+                print("=> loading checkpoint '{}'".format(opt.resume_path))
+                checkpoint = torch.load(opt.resume_path, map_location=lambda storage, loc: storage)
+                config['global_params']['num_clusters'] = str(checkpoint['state_dict']['pool.centroids'].shape[0])
 
-    if opt.resume_path: # if already started training earlier and continuing
-        if isfile(opt.resume_path):
-            print("=> loading checkpoint '{}'".format(opt.resume_path))
-            checkpoint = torch.load(opt.resume_path, map_location=lambda storage, loc: storage)
-            config['global_params']['num_clusters'] = str(checkpoint['state_dict']['pool.centroids'].shape[0])
+                model = get_model(encoder, encoder_dim, config['global_params'], append_pca_layer=False)
+
+                model.load_state_dict(checkpoint['state_dict'])
+                opt.start_epoch = checkpoint['epoch']
+
+                print("=> loaded checkpoint '{}'".format(opt.resume_path, ))
+            else:
+                raise FileNotFoundError("=> no checkpoint found at '{}'".format(opt.resume_path))
+        else: # if not, assume fresh training instance and will initially generate cluster centroids
+            print('===> Loading model')
+            config['global_params']['num_clusters'] = config['train']['num_clusters']
 
             model = get_model(encoder, encoder_dim, config['global_params'], append_pca_layer=False)
+            initcache = join(opt.cache_path, 'centroids', 'vgg16_' + 'KITTI360_' + config['train'][
+                                        'num_clusters'] + '_desc_cen.hdf5')
+            # initcache = join(opt.cache_path, 'centroids', 'vgg16_' + 'mapillary_' + config['train'][
+            #                              'num_clusters'] + '_desc_cen.hdf5')
 
-            model.load_state_dict(checkpoint['state_dict'])
-            opt.start_epoch = checkpoint['epoch']
-
-            print("=> loaded checkpoint '{}'".format(opt.resume_path, ))
-        else:
-            raise FileNotFoundError("=> no checkpoint found at '{}'".format(opt.resume_path))
-    else: # if not, assume fresh training instance and will initially generate cluster centroids
-        print('===> Loading model')
-        config['global_params']['num_clusters'] = config['train']['num_clusters']
-
-        model = get_model(encoder, encoder_dim, config['global_params'], append_pca_layer=False)
-
-        initcache = join(opt.cache_path, 'centroids', 'vgg16_' + 'mapillary_' + config['train'][
-                                      'num_clusters'] + '_desc_cen.hdf5')
-
-        if opt.cluster_path:
-            if isfile(opt.cluster_path):
-                if opt.cluster_path != initcache:
-                    shutil.copyfile(opt.cluster_path, initcache)
+            if opt.cluster_path:
+                if isfile(opt.cluster_path):
+                    if opt.cluster_path != initcache:
+                        shutil.copyfile(opt.cluster_path, initcache)
+                else:
+                    raise FileNotFoundError("=> no cluster data found at '{}'".format(opt.cluster_path))
             else:
-                raise FileNotFoundError("=> no cluster data found at '{}'".format(opt.cluster_path))
-        else:
-            print('===> Finding cluster centroids')
+                print('===> Finding cluster centroids')
 
-            print('===> Loading dataset(s) for clustering')
-            train_dataset = MSLS(opt.dataset_root_dir, save = True, mode='val', cities='train', transform=input_transform(),
-                                 bs=int(config['train']['cachebatchsize']), threads=opt.threads,
-                                 margin=float(config['train']['margin']))
+                print('===> Loading dataset(s) for clustering')
+                train_dataset = KITTI360PANORAMA(opt.dataset_root_dir, save=True, mode='val', cities='train', transform=input_transform(),
+                                    bs=int(config['train']['cachebatchsize']), threads=opt.threads,
+                                    margin=float(config['train']['margin']))
 
-            model = model.to(device)
+                model = model.to(device)
 
-            print('===> Calculating descriptors and clusters')
-            get_clusters(train_dataset, model, encoder_dim, device, opt, config)
+                print('===> Calculating descriptors and clusters')
+                get_clusters(train_dataset, model, encoder_dim, device, opt, config)
 
-            # a little hacky, but needed to easily run init_params
-            model = model.to(device="cpu")
-    
-        with h5py.File(initcache, mode='r') as h5:
-            clsts = h5.get("centroids")[...]
-            traindescs = h5.get("descriptors")[...]
-            model.pool.init_params(clsts, traindescs)
-            del clsts, traindescs
+                # a little hacky, but needed to easily run init_params
+                model = model.to(device="cpu")
+        
+            with h5py.File(initcache, mode='r') as h5:
+                clsts = h5.get("centroids")[...]
+                traindescs = h5.get("descriptors")[...]
+                model.pool.init_params(clsts, traindescs)
+                del clsts, traindescs
+    else:
+        model = get_vit_model(encoder, encoder_dim)
 
     isParallel = False
     if int(config['global_params']['nGPU']) > 1 and torch.cuda.device_count() > 1:
@@ -173,15 +181,15 @@ if __name__ == "__main__":
 
     if config['train']['optim'] == 'ADAM':
         optimizer = optim.Adam(filter(lambda par: par.requires_grad,
-                                      model.parameters()), lr=float(config['train']['lr']))  # , betas=(0,0.9))
+                                    model.parameters()), lr=float(config['train']['lr']))  # , betas=(0,0.9))
     elif config['train']['optim'] == 'SGD':
         optimizer = optim.SGD(filter(lambda par: par.requires_grad,
-                                     model.parameters()), lr=float(config['train']['lr']),
-                              momentum=float(config['train']['momentum']),
-                              weight_decay=float(config['train']['weightDecay']))
+                                model.parameters()), lr=float(config['train']['lr']),
+                                momentum=float(config['train']['momentum']),
+                                weight_decay=float(config['train']['weightDecay']))
 
         scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=int(config['train']['lrstep']),
-                                              gamma=float(config['train']['lrgamma']))
+                                            gamma=float(config['train']['lrgamma']))
     else:
         raise ValueError('Unknown optimizer: ' + config['train']['optim'])
 
@@ -193,50 +201,65 @@ if __name__ == "__main__":
         optimizer.load_state_dict(checkpoint['optimizer'])
 
     print('===> Loading dataset(s)')
-    exlude_panos_training = not config['train'].getboolean('includepanos')
-    # save the image list to npy files so that the loading is faster
-    if not os.path.exists(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad')):
-        print('npys_patch_netvlad not found, create:', os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad'))
-        os.mkdir(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad'))
-        _ = MSLS(root_dir=opt.dataset_root_dir, save=True, mode='val', posDistThr=25)
-        _ = MSLS(root_dir=opt.dataset_root_dir, save=True, mode='train')
+    if opt.dataset != 'msls':
+        # save the image list to npy files so that the loading is faster
+        if not os.path.exists(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad')):
+            print('npys_patch_netvlad not found, create:', os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad'))
+            os.mkdir(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad'))
+            _ = KITTI360PANORAMA(root_dir=opt.dataset_root_dir, save=True, mode='val', posDistThr=3)
+            _ = KITTI360PANORAMA(root_dir=opt.dataset_root_dir, save=True, mode='train')
+    else:
+        exlude_panos_training = not config['train'].getboolean('includepanos')
+        # save the image list to npy files so that the loading is faster
+        if not os.path.exists(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad')):
+            print('npys_patch_netvlad not found, create:', os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad'))
+            os.mkdir(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad'))
+            _ = MSLS(root_dir=opt.dataset_root_dir, save=True, mode='val', posDistThr=20)
+            _ = MSLS(root_dir=opt.dataset_root_dir, save=True, mode='train')
     
-    # here only process the single city for accommodate the whole dataset   
-    # or test the pipeline, both train and test dataset are the smallest
-    train_dataset = MSLS(opt.dataset_root_dir, cities='zurich', mode='train', nNeg=int(config['train']['nNeg']), transform=input_transform(),
-                         bs=int(config['train']['cachebatchsize']), threads=opt.threads, margin=float(config['train']['margin']))
+    if opt.dataset != 'msls':
+        # here only process the single city for accommodate the whole dataset   
+        # or test the pipeline, both train and test dataset are the smallest
+        train_dataset = KITTI360PANORAMA(opt.dataset_root_dir, cities='0', mode='train', nNeg=int(config['train']['nNeg']), transform=input_transform(),
+                            bs=int(config['train']['cachebatchsize']), threads=opt.threads, margin=float(config['train']['margin']))
 
-    validation_dataset = MSLS(opt.dataset_root_dir, cities="cph,sf", mode='val', transform=input_transform(),
-                              bs=int(config['train']['cachebatchsize']), threads=opt.threads,
-                              margin=float(config['train']['margin']), posDistThr=25)
-    
-    # train_dataset.qIdx = np.load(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad', 'msls_train_qIdx.npy'))
-    # train_dataset.dbImages = np.load(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad', 'msls_train_dbImages.npy'))
-    # train_dataset.qImages = np.load(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad', 'msls_train_qImages.npy'))
-    # train_dataset.pIdx = np.load(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad', 'msls_train_pIdx.npy'), allow_pickle=True)
-    # train_dataset.nonNegIdx = np.load(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad', 'msls_train_nonNegIdx.npy'), allow_pickle=True)
-    # train_dataset.sideways = np.load(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad', 'msls_train_sideways.npy'))
-    # train_dataset.night = np.load(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad', 'msls_train_night.npy'))
-    # # for negative mining scheme
-    # train_dataset.negCache = np.asarray([np.empty((0,), dtype=int)] * len(train_dataset.qIdx))
-    # train_dataset.__calcSamplingWeights__()
+        validation_dataset = KITTI360PANORAMA(opt.dataset_root_dir, cities="3", mode='val', transform=input_transform(),
+                                bs=int(config['train']['cachebatchsize']), threads=opt.threads,
+                                margin=float(config['train']['margin']), posDistThr=3)
+        
+        # train_dataset.qIdx = np.load(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad', 'msls_train_qIdx.npy'))
+        # train_dataset.dbImages = np.load(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad', 'msls_train_dbImages.npy'))
+        # train_dataset.qImages = np.load(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad', 'msls_train_qImages.npy'))
+        # train_dataset.pIdx = np.load(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad', 'msls_train_pIdx.npy'), allow_pickle=True)
+        # train_dataset.nonNegIdx = np.load(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad', 'msls_train_nonNegIdx.npy'), allow_pickle=True)
+        # train_dataset.sideways = np.load(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad', 'msls_train_sideways.npy'))
+        # train_dataset.night = np.load(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad', 'msls_train_night.npy'))
+        # # for negative mining scheme
+        # train_dataset.negCache = np.asarray([np.empty((0,), dtype=int)] * len(train_dataset.qIdx))
+        # train_dataset.__calcSamplingWeights__()
 
-    # validation_dataset.qIdx = np.load(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad', 'msls_val_qIdx.npy'))
-    # validation_dataset.dbImages = np.load(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad', 'msls_val_dbImages.npy'))
-    # validation_dataset.qImages = np.load(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad', 'msls_val_qImages.npy'))
-    # validation_dataset.pIdx = np.load(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad', 'msls_val_pIdx.npy'), allow_pickle=True)
-    # validation_dataset.nonNegIdx = np.load(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad', 'msls_val_nonNegIdx.npy'), allow_pickle=True)
-    # validation_dataset.sideways = np.load(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad', 'msls_val_sideways.npy'))
-    # validation_dataset.night = np.load(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad', 'msls_val_night.npy'))
-    # validation_dataset.all_pos_indices = np.load(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad', 'msls_val_all_pos_indices.npy'), allow_pickle=True)
-    # validation_dataset.qEndPosList = np.load(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad', 'msls_val_qEndPosList.npy'), allow_pickle=True)
-    # validation_dataset.dbEndPosList = np.load(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad', 'msls_val_dbEndPosList.npy'), allow_pickle=True)
+        # validation_dataset.qIdx = np.load(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad', 'msls_val_qIdx.npy'))
+        # validation_dataset.dbImages = np.load(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad', 'msls_val_dbImages.npy'))
+        # validation_dataset.qImages = np.load(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad', 'msls_val_qImages.npy'))
+        # validation_dataset.pIdx = np.load(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad', 'msls_val_pIdx.npy'), allow_pickle=True)
+        # validation_dataset.nonNegIdx = np.load(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad', 'msls_val_nonNegIdx.npy'), allow_pickle=True)
+        # validation_dataset.sideways = np.load(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad', 'msls_val_sideways.npy'))
+        # validation_dataset.night = np.load(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad', 'msls_val_night.npy'))
+        # validation_dataset.all_pos_indices = np.load(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad', 'msls_val_all_pos_indices.npy'), allow_pickle=True)
+        # validation_dataset.qEndPosList = np.load(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad', 'msls_val_qEndPosList.npy'), allow_pickle=True)
+        # validation_dataset.dbEndPosList = np.load(os.path.join(opt.dataset_root_dir, 'npys_patch_netvlad', 'msls_val_dbEndPosList.npy'), allow_pickle=True)
+    else:
+        train_dataset = MSLS(opt.dataset_root_dir, cities='berlin', mode='train', nNeg=int(config['train']['nNeg']), transform=input_transform(),
+                        bs=int(config['train']['cachebatchsize']), threads=opt.threads, margin=float(config['train']['margin']))
+
+        validation_dataset = MSLS(opt.dataset_root_dir, cities="sf", mode='val', transform=input_transform(),
+                            bs=int(config['train']['cachebatchsize']), threads=opt.threads,
+                            margin=float(config['train']['margin']), posDistThr=25)
 
     print('===> Training query set:', len(train_dataset.qIdx))
     print('===> Evaluating on val set, query count:', len(validation_dataset.qIdx))
     print('===> Training model')
-    writer = SummaryWriter(
-        log_dir=join(opt.save_path, datetime.now().strftime('%b%d_%H-%M-%S') + '_' + opt.identifier))
+    writer = SummaryWriter(log_dir=join(opt.save_path, datetime.now().strftime('%b%d_%H-%M-%S') + '_' + opt.model + '_' + opt.identifier))
 
     # write checkpoints in logdir
     logdir = writer.file_writer.get_logdir()
@@ -254,8 +277,7 @@ if __name__ == "__main__":
         if scheduler is not None:
             scheduler.step(epoch)
         if (epoch % int(config['train']['evalevery'])) == 0:
-            recalls = val(validation_dataset, model, encoder_dim, device, opt, config, writer, epoch,
-                          write_tboard=True, pbar_position=1)
+            recalls = val(validation_dataset, model, encoder_dim, device, opt, config, writer, epoch, write_tboard=True, pbar_position=1)
             is_best = recalls[5] > best_score
             if is_best:
                 not_improved = 0

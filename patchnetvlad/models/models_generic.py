@@ -30,6 +30,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from patchnetvlad.models.netvlad import NetVLAD
 from patchnetvlad.models.patchnetvlad import PatchNetVLAD
+from patchnetvlad.models.vit import VisionTransformerEncoder
 
 
 class Flatten(nn.Module):
@@ -67,6 +68,12 @@ def get_backend():
     return enc_dim, enc
 
 
+def get_vit_backend():
+    enc_dim = 384
+    image_encoder = VisionTransformerEncoder.from_config()
+    return enc_dim, image_encoder
+
+
 def get_model(encoder, encoder_dim, config, append_pca_layer=False):
     # config['global_params'] is passed as config
     nn_model = nn.Module()
@@ -99,4 +106,10 @@ def get_model(encoder, encoder_dim, config, append_pca_layer=False):
         pca_conv = nn.Conv2d(netvlad_output_dim, num_pcs, kernel_size=(1, 1), stride=1, padding=0)
         nn_model.add_module('WPCA', nn.Sequential(*[pca_conv, Flatten(), L2Norm(dim=-1)]))
 
+    return nn_model
+
+
+def get_vit_model(encoder, encoder_dim):
+    nn_model = nn.Module()
+    nn_model.add_module('encoder', encoder)
     return nn_model

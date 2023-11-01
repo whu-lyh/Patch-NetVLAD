@@ -47,7 +47,7 @@ from tqdm import tqdm
 
 
 default_cities = {
-    'train': ["0"],
+    'train': ["0", "2", "4", "5", "6", "7", "9", "10"],
     'val': ["3"],
     'test': ["3"]
 }
@@ -80,15 +80,15 @@ class ImagesFromList(Dataset):
 
     def __getitem__(self, idx):
         img = Image.open(self.images[idx])
-        img = resize_img(img,0.25)
+        img = resize_img(img, 0.25)
         img = self.transform(img)
 
         return img, idx
 
 
 class KITTI360PANORAMA(Dataset):
-    def __init__(self, root_dir, cities='', nNeg=5, transform=None, mode='train', task='im2im', 
-                 seq_length=1, posDistThr=10, negDistThr=25, cached_queries=100, cached_negatives=100, bs=24, threads=8, margin=0.1):
+    def __init__(self, root_dir, save=False, cities='', nNeg=5, transform=None, mode='train', task='im2im', 
+                 seq_length=1, posDistThr=10, negDistThr=25, cached_queries=1000, cached_negatives=2000, bs=24, threads=8, margin=0.1):
 
         # initializing
         assert mode in ('train', 'val', 'test')
@@ -185,7 +185,7 @@ class KITTI360PANORAMA(Dataset):
                 neigh = NearestNeighbors(algorithm='brute')
                 neigh.fit(utmDb)
                 pos_distances, pos_indices = neigh.radius_neighbors(utmQ, self.posDistThr)
-                print(len(pos_indices))
+                # print("len(pos_indices): ", len(pos_indices))
                 self.all_pos_indices.extend(pos_indices)
 
                 if self.mode == 'train':
@@ -243,11 +243,22 @@ class KITTI360PANORAMA(Dataset):
         self.qIdx = np.asarray(self.qIdx)
         #self.qIdx = np.asarray(self.qIdx,dtype=object) # wired bugs but works for the warnings
         self.qImages = np.asarray(self.qImages)
-        self.pIdx = np.asarray(self.pIdx)
-        #self.pIdx = np.asarray(self.pIdx,dtype=object)
-        self.nonNegIdx = np.asarray(self.nonNegIdx)
-        #self.nonNegIdx = np.asarray(self.nonNegIdx,dtype=object)
+        # self.pIdx = np.asarray(self.pIdx)
+        self.pIdx = np.asarray(self.pIdx,dtype=object)
+        # self.nonNegIdx = np.asarray(self.nonNegIdx)
+        self.nonNegIdx = np.asarray(self.nonNegIdx,dtype=object)
         self.dbImages = np.asarray(self.dbImages)
+
+        if save:
+            np.save(join(root_dir, 'npys_patch_netvlad', 'msls_' + self.mode + '_qIdx.npy'), self.qIdx)
+            np.save(join(root_dir, 'npys_patch_netvlad', 'msls_' + self.mode + '_qImages.npy'), self.qImages)
+            np.save(join(root_dir, 'npys_patch_netvlad', 'msls_' + self.mode + '_dbImages.npy'), self.dbImages)
+            np.save(join(root_dir, 'npys_patch_netvlad', 'msls_' + self.mode + '_pIdx.npy'), self.pIdx)
+            np.save(join(root_dir, 'npys_patch_netvlad', 'msls_' + self.mode + '_nonNegIdx.npy'), self.nonNegIdx)
+            if mode == 'val':
+                np.save(join(root_dir, 'npys_patch_netvlad', 'msls_' + self.mode + '_all_pos_indices.npy'), np.array(self.all_pos_indices))
+                np.save(join(root_dir, 'npys_patch_netvlad', 'msls_' + self.mode + '_qEndPosList.npy'), np.array(self.qEndPosList))
+                np.save(join(root_dir, 'npys_patch_netvlad', 'msls_' + self.mode + '_dbEndPosList.npy'), np.array(self.dbEndPosList))
 
         # decide device type ( important for triplet mining )
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -331,13 +342,13 @@ class KITTI360PANORAMA(Dataset):
         # reset subset counter
         self.current_subset = 0
 
-    def update_subcache(self, net=None, outputdim=None):
+    def update_subcache(self, net=None, outputdim=None, epoch_num=0):
         # reset triplets, here only data idx is stored
         self.triplets = []
 
         # if there is no network associate to the cache, then we don't do any hard negative mining.
         # Instead we just create some naive triplets based on distance.
-        if net is None:
+        if net is None:# or epoch_num <= 2:
             qidxs = np.random.choice(len(self.qIdx), self.cached_queries, replace=False)
 
             for q in qidxs:
@@ -492,7 +503,9 @@ class KITTI360PANORAMA(Dataset):
         qidx = triplet[0]
         pidx = triplet[1]
         nidx = triplet[2:]
-
+        # print("self.qImages[qidx]: ", self.qImages[qidx])
+        # print("self.dbImages[pidx]: ", self.dbImages[pidx])
+        # print("nidx: ", nidx)
         # load images into triplet list
         query = self.transform(Image.open(self.qImages[qidx]).convert('RGB'))
         positive = self.transform(Image.open(self.dbImages[pidx]).convert('RGB'))

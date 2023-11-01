@@ -147,21 +147,16 @@ class MSLS(Dataset):
                 # load query data
                 qData = pd.read_csv(join(root_dir, subdir, city, 'query', 'postprocessed.csv'), index_col=0)
                 qDataRaw = pd.read_csv(join(root_dir, subdir, city, 'query', 'raw.csv'), index_col=0)
-
                 # load database data
                 dbData = pd.read_csv(join(root_dir, subdir, city, 'database', 'postprocessed.csv'), index_col=0)
                 dbDataRaw = pd.read_csv(join(root_dir, subdir, city, 'database', 'raw.csv'), index_col=0)
-
                 # arange based on task
                 qSeqKeys, qSeqIdxs = self.arange_as_seq(qData, join(root_dir, subdir, city, 'query'), seq_length_q)
-                dbSeqKeys, dbSeqIdxs = self.arange_as_seq(dbData, join(root_dir, subdir, city, 'database'),
-                                                          seq_length_db)
-
+                dbSeqKeys, dbSeqIdxs = self.arange_as_seq(dbData, join(root_dir, subdir, city, 'database'), seq_length_db)
                 # filter based on subtasks
                 if self.mode in ['val']:
                     qIdx = pd.read_csv(join(root_dir, subdir, city, 'query', 'subtask_index.csv'), index_col=0)
                     dbIdx = pd.read_csv(join(root_dir, subdir, city, 'database', 'subtask_index.csv'), index_col=0)
-
                     # find all the sequence where the center frame belongs to a subtask
                     val_frames = np.where(qIdx[self.subtask])[0]
                     qSeqKeys, qSeqIdxs = self.filter(qSeqKeys, qSeqIdxs, val_frames)
@@ -276,16 +271,15 @@ class MSLS(Dataset):
                 # then exit
         if len(self.qImages) == 0 or len(self.dbImages) == 0:
             print("Exiting...")
-            print(
-                "A combination of cities, task and subtask have been chosen, where there are no query/database images.")
+            print("A combination of cities, task and subtask have been chosen, where there are no query/database images.")
             print("Try choosing a different subtask or more cities")
             sys.exit()
 
         # cast to np.arrays for indexing during training
         self.qIdx = np.asarray(self.qIdx)
         self.qImages = np.asarray(self.qImages)
-        self.pIdx = np.asarray(self.pIdx)
-        self.nonNegIdx = np.asarray(self.nonNegIdx)
+        self.pIdx = np.asarray(self.pIdx, dtype=object)
+        self.nonNegIdx = np.asarray(self.nonNegIdx, dtype=object)
         self.dbImages = np.asarray(self.dbImages)
         self.sideways = np.asarray(self.sideways)
         self.night = np.asarray(self.night)
